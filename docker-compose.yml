@@ -1,0 +1,23 @@
+# Uso local:
+#   docker compose up --build                        -> sobe a API em http://localhost:8000/docs
+#   docker compose --profile test run --rm tests     -> roda a suíte pytest no container
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    image: detector-api
+    ports:
+      - "8000:8000"
+    environment:
+      YOLO_CONFIANCA: "0.40"
+      YOLO_IMGSZ: "640"
+      UPLOAD_MAX_BYTES: "10485760"
+    restart: unless-stopped
+
+  tests:
+    build:
+      context: .
+      target: test
+    image: detector-api-test
+    profiles: ["test"]

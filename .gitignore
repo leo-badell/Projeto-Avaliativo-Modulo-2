@@ -3,9 +3,17 @@ venv/
 __pycache__/
 *.py[cod]
 .env
+.env.*
 *.pt
 runs/
+*.log
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 .vscode/
+.idea/
 .DS_Store
+Thumbs.db
 

@@ -1,0 +1,36 @@
+# Ambiente virtual e caches locais (a imagem instala as próprias dependências)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Controle de versão e editores
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Segredos: variáveis vão pelo painel do Render ou por -e/--env-file
+.env
+.env.*
+
+# Pesos e saídas do YOLO: o peso é baixado durante o build
+*.pt
+runs/
+*.log
+
+# Arquivos do próprio Docker e documentação
+Dockerfile
+docker-compose.yml
+.dockerignore
+*.md
+
+# tests/, pytest.ini e imagens/ ficam: o estágio "test" precisa deles.
+# O estágio "runtime" copia apenas config.py e detectar_endpoint.py.

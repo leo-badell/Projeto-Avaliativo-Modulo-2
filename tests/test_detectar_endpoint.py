@@ -146,9 +146,9 @@ def test_post_detectar_exige_o_campo_arquivo(client):
 # ==============================================================================
 @pytest.mark.slow
 def test_inferencia_real_detecta_cachorro(client_real):
-    with open("imagens/cachorro.jpeg", "rb") as arquivo:
+    with open("imagens/dogs.jpeg", "rb") as arquivo:
         resposta = client_real.post(
-            "/detectar/", files={"arquivo": ("cachorro.jpeg", arquivo.read(), "image/jpeg")}
+            "/detectar/", files={"arquivo": ("dogs.jpeg", arquivo.read(), "image/jpeg")}
         )
 
     assert resposta.status_code == 200
