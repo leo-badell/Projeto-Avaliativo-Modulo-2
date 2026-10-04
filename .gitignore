@@ -4,6 +4,10 @@ __pycache__/
 *.py[cod]
 .env
 .env.*
+# Certificado da rede corporativa (usado só no build local via --secret)
+*.crt
+*.cer
+*.pem
 *.pt
 runs/
 *.log

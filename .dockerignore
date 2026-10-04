@@ -21,6 +21,11 @@ Thumbs.db
 .env
 .env.*
 
+# Certificado corporativo: entra no build só via --secret, nunca no contexto
+*.crt
+*.cer
+*.pem
+
 # Pesos e saídas do YOLO: o peso é baixado durante o build
 *.pt
 runs/
