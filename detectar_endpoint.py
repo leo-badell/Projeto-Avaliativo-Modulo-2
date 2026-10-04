@@ -1,9 +1,21 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from pydantic import BaseModel
 from ultralytics import YOLO
+from contextlib import asynccontextmanager
+from functools import lru_cache
 import os
 import cv2
 import numpy as np
+
+from config import (
+    CAMINHO_MODELO,
+    CONFIANCA_MINIMA,
+    TAMANHO_INFERENCIA,
+    EXTENSOES_PERMITIDAS,
+    TAMANHO_MAXIMO_BYTES,
+    HOST,
+    PORTA,
+)
 
 # ==============================================================================
 # BLOCO 1: MOLDES PYDANTIC (FORMATO DA RESPOSTA JSON)
@@ -30,18 +42,25 @@ class RespostaAPI(BaseModel):
 # ==============================================================================
 # BLOCO 2: INICIALIZAÇÃO DO APP E DO MODELO
 # ==============================================================================
+@lru_cache(maxsize=1)
+def obter_modelo() -> YOLO:
+    """Carrega o YOLO uma única vez; nos testes é substituído via dependency_overrides."""
+    print("[SISTEMA] Carregando YOLOv8")
+    return YOLO(CAMINHO_MODELO)
+
+
+@asynccontextmanager
+async def ciclo_de_vida(app: FastAPI):
+    obter_modelo()  # aquece o cache para o primeiro request não pagar a carga dos pesos
+    yield
+
+
 app = FastAPI(
     title="API Detector de Objetos",
     description="Detecção de objetos com YOLOv8 (modelo nano) e FastAPI.",
     version="1.0.0",
+    lifespan=ciclo_de_vida,
 )
-
-CAMINHO_MODELO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "yolov8n.pt")
-CONFIANCA_MINIMA = 0.40
-EXTENSOES_PERMITIDAS = ("jpg", "jpeg", "png")
-
-print("[SISTEMA] Carregando o motor YOLOv8 na memória...")
-modelo = YOLO(CAMINHO_MODELO)
 
 
 # ==============================================================================
@@ -62,7 +81,7 @@ def extrair_deteccoes(resultado) -> list[ObjetoDetectado]:
 
     for box in resultado.boxes:
         cls_id = int(box.cls[0].item())
-        nome_classe = modelo.names[cls_id].upper()
+        nome_classe = resultado.names[cls_id].upper()
         confianca = round(float(box.conf[0].item()) * 100, 2)
 
         # box.xyxy traz o canto superior esquerdo e o inferior direito (Pascal VOC)
@@ -105,20 +124,31 @@ def status_servidor():
 
 
 @app.get("/classes")
-def listar_classes():
+def listar_classes(modelo: YOLO = Depends(obter_modelo)):
     """Endpoint GET: lista as classes que o modelo é capaz de detectar."""
     return {"total": len(modelo.names), "classes": list(modelo.names.values())}
 
 
 @app.post("/detectar/", response_model=RespostaAPI)
-async def detectar_objetos(arquivo: UploadFile = File(...)):
+async def detectar_objetos(
+    arquivo: UploadFile = File(...),
+    modelo: YOLO = Depends(obter_modelo),
+):
     """Endpoint POST: recebe uma imagem e devolve classes, confiança e coordenadas."""
     validar_arquivo(arquivo)
 
     imagem_bytes = await arquivo.read()
+    if len(imagem_bytes) > TAMANHO_MAXIMO_BYTES:
+        raise HTTPException(status_code=413, detail="Imagem maior que o limite permitido.")
+
     imagem = bytes_para_imagem(imagem_bytes)
 
-    resultados = modelo.predict(source=imagem, conf=CONFIANCA_MINIMA, verbose=False)
+    resultados = modelo.predict(
+        source=imagem,
+        conf=CONFIANCA_MINIMA,
+        imgsz=TAMANHO_INFERENCIA,
+        verbose=False,
+    )
     deteccoes = extrair_deteccoes(resultados[0])
 
     return RespostaAPI(
@@ -131,4 +161,4 @@ async def detectar_objetos(arquivo: UploadFile = File(...)):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host=HOST, port=PORTA)

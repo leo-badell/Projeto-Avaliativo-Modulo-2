@@ -1,0 +1,78 @@
+# API de Detecção de Objetos — YOLOv8 + FastAPI
+
+Projeto Avaliativo do Módulo 2. A API recebe uma imagem via HTTP e devolve, em JSON,
+as classes detectadas com a confiança e as coordenadas `x_min`, `y_min`, `x_max`, `y_max`.
+
+## Estrutura
+
+```text
+Projeto-Avaliativo-Modulo-2/
+├── config.py              # constantes e variáveis de ambiente
+├── detectar_endpoint.py   # app FastAPI (endpoints GET e POST)
+├── requirements.txt       # dependências diretas
+├── requirements-dev.txt   # dependências de teste
+├── imagens/               # imagens de teste
+├── tests/                 # suíte pytest (conftest.py, dubles.py)
+├── pytest.ini             # testpaths e marcador slow
+└── yolov8n.pt             # peso do modelo (ignorado pelo Git)
+```
+
+## Como rodar
+
+```bash
+python -m venv .venv
+source .venv/Scripts/activate        # Windows (bash) — no CMD use .venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn detectar_endpoint:app --reload
+```
+
+Documentação interativa em `http://localhost:8000/docs`.
+
+O arquivo `yolov8n.pt` não é versionado. Se ele não existir, o `ultralytics` faz o
+download automático na primeira execução.
+
+## Testes
+
+```bash
+pip install -r requirements-dev.txt
+pytest          # 22 testes com o YOLO substituído por dublê (~0,1 s)
+pytest -m slow  # smoke de inferência real, carrega os pesos
+```
+
+A suíte padrão troca o modelo via `app.dependency_overrides`, então nenhum peso é
+carregado. O marcador `slow` fica fora da execução normal (ver `pytest.ini`).
+
+## Endpoints
+
+| Método | Rota         | Descrição                                |
+| ------ | ------------ | ---------------------------------------- |
+| GET    | `/`          | Status da API e modelo carregado         |
+| GET    | `/classes`   | Lista as classes que o modelo reconhece  |
+| POST   | `/detectar/` | Recebe uma imagem e retorna as detecções |
+
+### Exemplo de resposta
+
+```json
+{
+  "mensagem": "Análise de imagem concluída com sucesso.",
+  "total_objetos": 1,
+  "resultados": [
+    {
+      "classe": "DOG",
+      "confianca_pct": 92.45,
+      "coordenadas": { "x_min": 48, "y_min": 112, "x_max": 310, "y_max": 428 }
+    }
+  ]
+}
+```
+
+## Variáveis de ambiente
+
+| Variável           | Padrão       | Descrição                        |
+| ------------------ | ------------ | -------------------------------- |
+| `YOLO_MODELO`      | `yolov8n.pt` | Peso do modelo a carregar        |
+| `YOLO_CONFIANCA`   | `0.40`       | Confiança mínima para detectar   |
+| `YOLO_IMGSZ`       | `640`        | Lado da imagem na inferência     |
+| `UPLOAD_MAX_BYTES` | `10485760`   | Tamanho máximo do upload (10 MB) |
+| `HOST`             | `127.0.0.1`  | Host do servidor                 |
+| `PORT`             | `8000`       | Porta do servidor                |
