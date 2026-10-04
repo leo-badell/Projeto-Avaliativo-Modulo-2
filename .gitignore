@@ -3,9 +3,21 @@ venv/
 __pycache__/
 *.py[cod]
 .env
+.env.*
+# Certificado da rede corporativa (usado só no build local via --secret)
+*.crt
+*.cer
+*.pem
 *.pt
 runs/
+*.log
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 .vscode/
+.idea/
 .DS_Store
+Thumbs.db
 
