@@ -75,7 +75,7 @@ com o `opencv-python-headless`. O build remove os dois e reinstala só o headles
 2. **Language:** `Docker` · **Branch:** `main` · **Dockerfile Path:** `./Dockerfile`.
 3. Não defina `PORT` nem `HOST`: o Render injeta `PORT` e o Dockerfile fixa `HOST=0.0.0.0`.
 4. **Health Check Path:** `/`.
-5. Depois do deploy, a documentação fica em `https://<seu-servico>.onrender.com/docs`.
+5. Depois do deploy, a documentação fica em `https://projeto-avaliativo-modulo-2.onrender.com`.
 
 ## Endpoints
 
