@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from ultralytics import YOLO
 from contextlib import asynccontextmanager
 from functools import lru_cache
+from typing import Any
 import os
 import cv2
 import numpy as np
@@ -39,6 +40,11 @@ class RespostaAPI(BaseModel):
     resultados: list[ObjetoDetectado]
 
 
+class RespostaClasses(BaseModel):
+    total: int
+    classes: list[str]
+
+
 # ==============================================================================
 # BLOCO 2: INICIALIZAÇÃO DO APP E DO MODELO
 # ==============================================================================
@@ -50,7 +56,7 @@ def obter_modelo() -> YOLO:
 
 
 @asynccontextmanager
-async def ciclo_de_vida(app: FastAPI):
+async def ciclo_de_vida(_app: FastAPI):
     obter_modelo()  # aquece o cache para o primeiro request não pagar a carga dos pesos
     yield
 
@@ -75,13 +81,14 @@ def bytes_para_imagem(imagem_bytes: bytes) -> np.ndarray:
     return imagem
 
 
-def extrair_deteccoes(resultado) -> list[ObjetoDetectado]:
+def extrair_deteccoes(resultado: Any) -> list[ObjetoDetectado]:
     """Lê as caixas do YOLO e converte cada uma em x_min, y_min, x_max, y_max."""
+    # Any: aceita tanto o Results do ultralytics quanto o ResultadoFalso dos testes
     deteccoes: list[ObjetoDetectado] = []
 
     for box in resultado.boxes:
         cls_id = int(box.cls[0].item())
-        nome_classe = resultado.names[cls_id].upper()
+        nome_classe = str(resultado.names[cls_id]).upper()
         confianca = round(float(box.conf[0].item()) * 100, 2)
 
         # box.xyxy traz o canto superior esquerdo e o inferior direito (Pascal VOC)
@@ -123,10 +130,11 @@ def status_servidor():
     }
 
 
-@app.get("/classes")
-def listar_classes(modelo: YOLO = Depends(obter_modelo)):
+@app.get("/classes", response_model=RespostaClasses)
+def listar_classes(modelo: YOLO = Depends(obter_modelo)) -> RespostaClasses:
     """Endpoint GET: lista as classes que o modelo é capaz de detectar."""
-    return {"total": len(modelo.names), "classes": list(modelo.names.values())}
+    classes = [str(nome) for nome in modelo.names.values()]
+    return RespostaClasses(total=len(classes), classes=classes)
 
 
 @app.post("/detectar/", response_model=RespostaAPI)
@@ -143,11 +151,15 @@ async def detectar_objetos(
 
     imagem = bytes_para_imagem(imagem_bytes)
 
-    resultados = modelo.predict(
-        source=imagem,
-        conf=CONFIANCA_MINIMA,
-        imgsz=TAMANHO_INFERENCIA,
-        verbose=False,
+    # list(): o ultralytics tipa o retorno como Iterator | list; o ignore cobre o
+    # parâmetro sem tipo da própria assinatura do predict (código da biblioteca).
+    resultados = list(
+        modelo.predict(  # pyright: ignore[reportUnknownMemberType]
+            source=imagem,
+            conf=CONFIANCA_MINIMA,
+            imgsz=TAMANHO_INFERENCIA,
+            verbose=False,
+        )
     )
     deteccoes = extrair_deteccoes(resultados[0])
 
