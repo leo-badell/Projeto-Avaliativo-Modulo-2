@@ -1,0 +1,58 @@
+name: Testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      # requirements-dev.txt já inclui o requirements.txt (torch +cpu no Linux).
+      - name: Instalar dependências
+        run: pip install -r requirements-dev.txt
+
+      # Mesma troca do Dockerfile: o ultralytics puxa o opencv-python (com GUI,
+      # exige libGL); mantemos só o headless fixado no requirements.txt.
+      - name: Manter apenas o OpenCV headless
+        run: |
+          pip uninstall -y opencv-python opencv-python-headless
+          pip install --no-deps "$(grep -E '^opencv-python-headless==' requirements.txt | tr -d '\r')"
+          python -c "import cv2, torch; print('OpenCV', cv2.__version__, '| Torch', torch.__version__)"
+
+      - name: Validar coleta dos testes
+        run: pytest --collect-only -q
+
+      # pytest.ini já aplica -m "not slow": roda os unitários e de integração com o dublê.
+      - name: Executar testes unitários e de integração
+        run: |
+          mkdir -p reports
+          pytest -v --tb=short --junitxml=reports/testes.xml
+
+      # Baixa o yolov8n.pt e roda a inferência real em imagens/dogs.jpeg.
+      - name: Executar teste com o modelo YOLO real
+        run: pytest -m slow -v --tb=short --junitxml=reports/testes-slow.xml
+
+      - name: Publicar relatório como artefato
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resultados-testes
+          path: reports/
+          retention-days: 15
