@@ -26,8 +26,11 @@ Thumbs.db
 *.cer
 *.pem
 
-# Pesos e saídas do YOLO: o peso é baixado durante o build
+# Pesos e saídas do YOLO: o peso base é baixado durante o build.
+# Exceção: o best.pt do fine-tuning não existe em lugar nenhum para baixar —
+# ele é produzido pelo fine_tuning.py e precisa entrar no contexto do build.
 *.pt
+!best.pt
 runs/
 *.log
 

@@ -1,0 +1,9 @@
+# Dependências exclusivas do fine_tuning.py.
+#
+# Deliberadamente SEPARADAS do requirements.txt: o treino roda no Kaggle ou na
+# máquina local, nunca no Render. Manter o pandas fora da imagem de produção
+# poupa ~50 MB de um orçamento de 512 MB — e a API não usa pandas em nenhum
+# ponto do caminho de request.
+-r requirements.txt
+
+pandas==2.3.3

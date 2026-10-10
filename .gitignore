@@ -8,7 +8,10 @@ __pycache__/
 *.crt
 *.cer
 *.pem
+# O peso base (yolov8n.pt) é baixado; o do fine-tuning é um artefato nosso e
+# precisa ser versionado, senão o deploy não tem o que servir no /fine_tuning/.
 *.pt
+!best.pt
 runs/
 *.log
 .pytest_cache/

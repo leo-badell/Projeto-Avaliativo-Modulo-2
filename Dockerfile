@@ -58,7 +58,11 @@ CMD ["pytest"]
 # ------------------------------------------------------------------------------
 FROM base AS runtime
 
-COPY config.py detectar_endpoint.py ./
+# O glob best*.pt é opcional de propósito: o COPY só exige que o conjunto todo
+# case com algo, e config.py já garante isso. Assim a imagem compila antes do
+# primeiro treino (o /fine_tuning/ responde 503) e passa a servir o peso assim
+# que ele for commitado, sem alterar o Dockerfile.
+COPY config.py detectar_endpoint.py best*.pt ./
 
 # O peso .pt não vai para o Git; baixamos no build para que o container não
 # precise da internet a cada cold start. Usa o mesmo caminho do config.py.

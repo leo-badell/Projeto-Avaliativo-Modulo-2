@@ -25,6 +25,18 @@ def client(modelo_falso) -> TestClient:
     api.app.dependency_overrides.clear()
 
 
+@pytest.fixture
+def client_ajustado(modelo_falso) -> TestClient:
+    """Cliente com o modelo do fine-tuning substituído pelo dublê.
+
+    Sem o override, obter_modelo_ajustado checa o best.pt no disco e responde
+    503 — é o que o teste do peso ausente exercita.
+    """
+    api.app.dependency_overrides[api.obter_modelo_ajustado] = lambda: modelo_falso
+    yield TestClient(api.app)
+    api.app.dependency_overrides.clear()
+
+
 @pytest.fixture(scope="session")
 def client_real() -> TestClient:
     """Cliente com o modelo YOLO de verdade. Usado apenas nos testes marcados slow."""
