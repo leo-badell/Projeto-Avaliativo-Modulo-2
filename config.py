@@ -8,6 +8,15 @@ RAIZ_PROJETO = os.path.dirname(os.path.abspath(__file__))
 NOME_MODELO = os.getenv("YOLO_MODELO", "yolov8n.pt")
 CAMINHO_MODELO = os.path.join(RAIZ_PROJETO, NOME_MODELO)
 
+# Peso do fine-tuning (endpoint /fine_tuning/). Diferente do base, este arquivo é
+# commitado: ninguém o baixa de lugar nenhum, ele é produzido pelo fine_tuning.py.
+# Se estiver ausente, a API continua de pé e só o /fine_tuning/ responde 503.
+NOME_MODELO_AJUSTADO = os.getenv("YOLO_MODELO_AJUSTADO", "best.pt")
+CAMINHO_MODELO_AJUSTADO = os.path.join(RAIZ_PROJETO, NOME_MODELO_AJUSTADO)
+
+# Dataset usado pelo fine_tuning.py; o ultralytics baixa sozinho pelo nome.
+DATASET_FINE_TUNING = os.getenv("YOLO_DATASET", "african-wildlife.yaml")
+
 CONFIANCA_MINIMA = float(os.getenv("YOLO_CONFIANCA", "0.40"))
 # Lado da imagem usado na inferência; reduzir acelera a rede e perde objetos pequenos.
 TAMANHO_INFERENCIA = int(os.getenv("YOLO_IMGSZ", "640"))

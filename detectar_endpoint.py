@@ -10,6 +10,7 @@ import numpy as np
 
 from config import (
     CAMINHO_MODELO,
+    CAMINHO_MODELO_AJUSTADO,
     CONFIANCA_MINIMA,
     TAMANHO_INFERENCIA,
     EXTENSOES_PERMITIDAS,
@@ -36,6 +37,7 @@ class ObjetoDetectado(BaseModel):
 
 class RespostaAPI(BaseModel):
     mensagem: str
+    modelo: str  # identifica qual peso respondeu: base ou ajustado
     total_objetos: int
     resultados: list[ObjetoDetectado]
 
@@ -48,16 +50,42 @@ class RespostaClasses(BaseModel):
 # ==============================================================================
 # BLOCO 2: INICIALIZAÇÃO DO APP E DO MODELO
 # ==============================================================================
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=2)
+def carregar_modelo(caminho: str) -> YOLO:
+    """Carrega um peso uma única vez. maxsize=2: o base e o do fine-tuning."""
+    print(f"[SISTEMA] Carregando {os.path.basename(caminho)}")
+    return YOLO(caminho)
+
+
 def obter_modelo() -> YOLO:
-    """Carrega o YOLO uma única vez; nos testes é substituído via dependency_overrides."""
-    print("[SISTEMA] Carregando YOLOv8")
-    return YOLO(CAMINHO_MODELO)
+    """Modelo base (COCO). Nos testes é substituído via dependency_overrides."""
+    return carregar_modelo(CAMINHO_MODELO)
+
+
+def obter_modelo_ajustado() -> YOLO:
+    """Modelo do fine-tuning.
+
+    O peso é um artefato do treino, não um download: se ninguém rodou o
+    fine_tuning.py ainda, o arquivo não existe. Responder 503 aqui mantém o
+    resto da API no ar em vez de derrubar o processo no boot.
+    """
+    if not os.path.exists(CAMINHO_MODELO_AJUSTADO):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Modelo ajustado ausente ({os.path.basename(CAMINHO_MODELO_AJUSTADO)}). "
+                "Rode 'python fine_tuning.py --publicar' e faça o commit do peso."
+            ),
+        )
+    return carregar_modelo(CAMINHO_MODELO_AJUSTADO)
 
 
 @asynccontextmanager
 async def ciclo_de_vida(_app: FastAPI):
-    obter_modelo()  # aquece o cache para o primeiro request não pagar a carga dos pesos
+    # Aquece só o modelo base. O ajustado carrega sob demanda, na primeira
+    # chamada ao /fine_tuning/: em 512 MB, pagar as duas cargas no boot aperta
+    # demais a memória e o cold start do free tier.
+    obter_modelo()
     yield
 
 
@@ -121,12 +149,16 @@ def validar_arquivo(arquivo: UploadFile) -> None:
 # BLOCO 4: ENDPOINTS GET E POST
 # ==============================================================================
 @app.get("/")
-def status_servidor():
+def status_servidor() -> dict[str, str | bool]:
     """Endpoint GET: confirma que a API está online."""
     return {
         "status": "Online",
         "modelo": os.path.basename(CAMINHO_MODELO),
-        "mensagem": "Acesse http://localhost:8000/docs para testar o endpoint /detectar/.",
+        # Expor isto evita adivinhação depois do deploy: se vier false, o peso
+        # do fine-tuning não entrou na imagem.
+        "modelo_ajustado": os.path.basename(CAMINHO_MODELO_AJUSTADO),
+        "modelo_ajustado_disponivel": os.path.exists(CAMINHO_MODELO_AJUSTADO),
+        "mensagem": "Acesse /docs para testar os endpoints /detectar/ e /fine_tuning/.",
     }
 
 
@@ -137,12 +169,12 @@ def listar_classes(modelo: YOLO = Depends(obter_modelo)) -> RespostaClasses:
     return RespostaClasses(total=len(classes), classes=classes)
 
 
-@app.post("/detectar/", response_model=RespostaAPI)
-async def detectar_objetos(
-    arquivo: UploadFile = File(...),
-    modelo: YOLO = Depends(obter_modelo),
-):
-    """Endpoint POST: recebe uma imagem e devolve classes, confiança e coordenadas."""
+async def analisar_upload(arquivo: UploadFile, modelo: YOLO, rotulo_modelo: str) -> RespostaAPI:
+    """Pipeline comum aos dois endpoints de detecção.
+
+    A única diferença entre /detectar/ e /fine_tuning/ são os pesos carregados;
+    validação, decodificação e extração das caixas são idênticas.
+    """
     validar_arquivo(arquivo)
 
     imagem_bytes = await arquivo.read()
@@ -165,9 +197,32 @@ async def detectar_objetos(
 
     return RespostaAPI(
         mensagem="Análise de imagem concluída com sucesso.",
+        modelo=rotulo_modelo,
         total_objetos=len(deteccoes),
         resultados=deteccoes,
     )
+
+
+@app.post("/detectar/", response_model=RespostaAPI)
+async def detectar_objetos(
+    arquivo: UploadFile = File(...),
+    modelo: YOLO = Depends(obter_modelo),
+):
+    """Endpoint POST: detecta com o modelo base (80 classes do COCO)."""
+    return await analisar_upload(arquivo, modelo, os.path.basename(CAMINHO_MODELO))
+
+
+@app.post("/fine_tuning/", response_model=RespostaAPI)
+async def detectar_objetos_ajustado(
+    arquivo: UploadFile = File(...),
+    modelo: YOLO = Depends(obter_modelo_ajustado),
+):
+    """Endpoint POST: detecta com o modelo do fine-tuning (african-wildlife).
+
+    Mesma imagem enviada aqui e no /detectar/ evidencia o ganho do treino:
+    buffalo e rhino não existem no COCO, então só este endpoint os encontra.
+    """
+    return await analisar_upload(arquivo, modelo, os.path.basename(CAMINHO_MODELO_AJUSTADO))
 
 
 if __name__ == "__main__":

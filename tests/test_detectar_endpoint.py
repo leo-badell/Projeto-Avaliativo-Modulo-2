@@ -1,8 +1,16 @@
+import os
+
 import pytest
 from fastapi import HTTPException, UploadFile
 
 import detectar_endpoint as api
-from config import TAMANHO_MAXIMO_BYTES, TAMANHO_INFERENCIA, CONFIANCA_MINIMA
+from config import (
+    CAMINHO_MODELO,
+    CAMINHO_MODELO_AJUSTADO,
+    TAMANHO_MAXIMO_BYTES,
+    TAMANHO_INFERENCIA,
+    CONFIANCA_MINIMA,
+)
 from dubles import BoxFalsa, ResultadoFalso
 
 
@@ -95,7 +103,7 @@ def test_post_detectar_serializa_a_deteccao_no_contrato(client, jpeg_valido):
 
     assert resposta.status_code == 200
     corpo = resposta.json()
-    assert set(corpo) == {"mensagem", "total_objetos", "resultados"}
+    assert set(corpo) == {"mensagem", "modelo", "total_objetos", "resultados"}
     assert corpo["total_objetos"] == len(corpo["resultados"]) == 1
     assert corpo["resultados"][0] == {
         "classe": "DOG",
@@ -139,6 +147,51 @@ def test_post_detectar_rejeita_upload_acima_do_limite(client, modelo_falso):
 
 def test_post_detectar_exige_o_campo_arquivo(client):
     assert client.post("/detectar/").status_code == 422
+
+
+# ==============================================================================
+# INTEGRAÇÃO: endpoint /fine_tuning/
+# ==============================================================================
+def test_post_fine_tuning_responde_no_mesmo_contrato(client_ajustado, jpeg_valido):
+    resposta = client_ajustado.post(
+        "/fine_tuning/", files={"arquivo": ("teste.jpg", jpeg_valido, "image/jpeg")}
+    )
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert set(corpo) == {"mensagem", "modelo", "total_objetos", "resultados"}
+    assert corpo["modelo"] == os.path.basename(CAMINHO_MODELO_AJUSTADO)
+
+
+def test_post_fine_tuning_aplica_as_mesmas_validacoes(client_ajustado, modelo_falso):
+    resposta = client_ajustado.post(
+        "/fine_tuning/", files={"arquivo": ("doc.pdf", b"%PDF-1.4", "application/pdf")}
+    )
+
+    assert resposta.status_code == 415
+    assert modelo_falso.chamadas == []
+
+
+def test_post_detectar_identifica_o_modelo_base(client, jpeg_valido):
+    resposta = client.post("/detectar/", files={"arquivo": ("t.jpg", jpeg_valido, "image/jpeg")})
+
+    assert resposta.json()["modelo"] == os.path.basename(CAMINHO_MODELO)
+
+
+def test_obter_modelo_ajustado_responde_503_sem_o_peso(monkeypatch):
+    """Sem o best.pt a API segue de pé; só este endpoint fica indisponível."""
+    monkeypatch.setattr(api.os.path, "exists", lambda _: False)
+
+    with pytest.raises(HTTPException) as erro:
+        api.obter_modelo_ajustado()
+
+    assert erro.value.status_code == 503
+    assert "fine_tuning.py" in erro.value.detail
+
+
+def test_carregar_modelo_cacheia_por_caminho():
+    """lru_cache(maxsize=2) comporta os dois pesos sem recarregar a cada request."""
+    assert api.carregar_modelo.cache_info().maxsize == 2
 
 
 # ==============================================================================
