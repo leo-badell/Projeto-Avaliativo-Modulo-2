@@ -50,6 +50,11 @@ Documentação interativa em `http://localhost:8000/docs`.
 O arquivo `yolov8n.pt` não é versionado. Se ele não existir, o `ultralytics` faz o
 download automático na primeira execução.
 
+O `best.pt`, ao contrário, **vem no clone** — ele é um artefato do treino, não existe
+para download em lugar nenhum. Ou seja: quem clona já tem os dois endpoints funcionando e
+só precisa rodar o treino se quiser **refazer** o modelo (outro dataset, outras épocas).
+O caminho completo para isso está em [Fine-tuning](#fine-tuning).
+
 ## Testes
 
 ```bash
@@ -74,21 +79,57 @@ dataset **african-wildlife** (~1050 imagens, 4 classes), baixado pelo próprio
 
 ### Treinar no Kaggle (recomendado)
 
-Abra `notebooks/fine_tuning_kaggle.ipynb` no Kaggle e, em **Settings**, ligue
-**Accelerator → GPU** e **Internet → ON** (vem desligada; sem ela o dataset não baixa).
-O notebook clona este repositório e executa o próprio `fine_tuning.py`, então o que roda
-lá é exatamente o que está versionado aqui.
+O treino exige GPU. O Kaggle oferece ~30 h por semana de graça, e o notebook deste
+repositório está publicado em
+[kaggle.com/code/byronrestrepo/fine-tuning-do-yolov8-com-african-wildlife-dataset](https://www.kaggle.com/code/byronrestrepo/fine-tuning-do-yolov8-com-african-wildlife-dataset/notebook).
+
+**Passo 0 — publique o seu código.** O notebook não roda o código da sua máquina: ele
+clona do GitHub. Faça commit e push antes de começar, ou o clone falha.
+
+**Passo 1 — abra o notebook no Kaggle.** Use o link acima (`Copy & Edit`) ou importe o
+arquivo: *Create → New Notebook → File → Import Notebook* e envie
+`notebooks/fine_tuning_kaggle.ipynb`.
+
+**Passo 2 — aponte o notebook para o SEU repositório.** Na célula 3, ajuste:
+
+```python
+REPO = "https://github.com/<seu-usuario>/Projeto-Avaliativo-Modulo-2.git"
+BRANCH = "main"   # a branch que contém o fine_tuning.py
+```
+
+> Sem isso você treina a partir do repositório de outra pessoa. Se você clonou/forkou
+> este projeto, **este passo é obrigatório**.
+
+**Passo 3 — configure a sessão.** Os controles ficam no **editor**, não no modo de
+visualização: clique em `Edit`, abra o painel lateral direito (seta `<` ou ícone ⚙) e
+ajuste:
+
+- **Accelerator → `GPU T4 x2`** (ou `P100`). Confirme o reinício da sessão.
+- **Internet → `On`.** Vem desligada. Sem ela falham o `pip install`, o `git clone` e o
+  download do dataset.
+
+> Se os dois controles estiverem acinzentados, falta **verificação de telefone** na conta
+> Kaggle — a plataforma exige isso para liberar GPU e internet. Há um link no próprio
+> painel.
+
+**Passo 4 — rode.** Execute a célula 1 e confirme que sai `cuda: True`; se vier `False`,
+a GPU não foi aplicada. Então use **`Save Version → Save & Run All (Commit)`** (não
+`Quick Save`, que não executa nada). O treino roda em segundo plano e você pode fechar a
+aba. São ~15–25 min para 50 épocas numa T4.
 
 ### Treinar localmente
 
 ```bash
 pip install -r requirements-train.txt
-python fine_tuning.py --epocas 50 --publicar
 python fine_tuning.py --epocas 1 --dataset coco8.yaml   # teste de fumaça, segundos
+python fine_tuning.py --epocas 50 --publicar            # treino real — LENTO sem GPU
 ```
 
 `--publicar` copia o `best.pt` para a raiz do repositório, onde a API e o Dockerfile o
 esperam. Sem a flag, o peso fica apenas em `runs/fine_tuning/`.
+
+> Sem GPU, 50 épocas sobre ~1050 imagens levam **horas**. Use o comando com `coco8.yaml`
+> para validar que o ambiente está correto e deixe o treino real para o Kaggle.
 
 Ao final o script imprime um relatório montado com `pandas`: um `merge(indicator=True)`
 cruza as classes do modelo ajustado com as do base para separar o que é capacidade nova,
@@ -97,6 +138,56 @@ e `where`/`mask` traduzem o resultado — sem percorrer linha a linha.
 > O `pandas` fica no `requirements-train.txt`, fora da imagem de produção. A API não usa
 > pandas em nenhum ponto do caminho de request: são poucas caixas por imagem, e os ~50 MB
 > da biblioteca pesariam num orçamento de 512 MB.
+
+### Depois do treino: trazendo o `best.pt` para o repositório
+
+**1. Baixe o peso.** Na versão concluída do notebook, aba **Output**, baixe o `best.pt`
+que está na raiz (a última célula o copia para lá justamente para não ficar perdido entre
+o dataset e a pasta `runs/`).
+
+**2. O arquivo vem como `best.zip` — não extraia.** Um `.pt` do PyTorch *é* internamente
+um ZIP, e o navegador renomeia a extensão. O arquivo baixado já é o peso completo:
+
+```bash
+mv ~/Downloads/best.zip Projeto-Avaliativo-Modulo-2/best.pt
+```
+
+> Se você extrair, vai obter `data.pkl`, `version`, `byteorder` e uma pasta `data/` —
+> as vísceras do modelo, inúteis soltas. Nesse caso apague e renomeie o `.zip` original.
+
+**3. Coloque na raiz do repositório**, no mesmo nível do `config.py`. O caminho é definido
+por `CAMINHO_MODELO_AJUSTADO` no `config.py`; em qualquer outro lugar o endpoint responde
+503.
+
+**4. Confira antes de commitar:**
+
+```bash
+python -c "from ultralytics import YOLO; print(YOLO('best.pt').names)"
+# esperado: {0: 'buffalo', 1: 'elephant', 2: 'rhino', 3: 'zebra'}
+```
+
+Se aparecerem 80 classes (`person`, `bicycle`, `car`...), você pegou o `yolov8n.pt` por
+engano.
+
+**5. Commite e faça push.** O `best.pt` é a única exceção ao `*.pt` do `.gitignore`:
+
+```bash
+git add best.pt && git commit -m "feat: peso do fine-tuning" && git push
+```
+
+O Render reconstrói ao detectar o push na branch que ele observa. Copiar o arquivo para a
+pasta local sem commitar não produz efeito algum no deploy.
+
+### O modelo ajustado não é um superconjunto do base
+
+O fine-tuning substitui a cabeça de detecção: o `best.pt` conhece **somente** as 4 classes
+do african-wildlife e perdeu as 80 do COCO. Enviar uma foto de cachorro ao `/fine_tuning/`
+devolve `ELEPHANT` — ele escolhe o animal mais próximo que conhece, porque "dog" não é uma
+opção para ele.
+
+Isso é esperado, não é defeito. Para comparar os dois endpoints, **use uma foto de búfalo
+ou rinoceronte**: são as classes que não existem no COCO, então `/detectar/` não acha nada
+e `/fine_tuning/` acerta. É aí que o ganho do treino fica visível.
 
 ## Rodando com Docker
 
