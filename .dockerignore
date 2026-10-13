@@ -40,5 +40,11 @@ docker-compose.yml
 .dockerignore
 *.md
 
+# Collection do Postman: documentação de API, testada de fora do container.
+# O estágio runtime já copia só config.py/detectar_endpoint.py/best*.pt, mas
+# deixar explícito evita que ela entre se algum dia isso virar um COPY . .
+postman/
+notebooks/
+
 # tests/, pytest.ini e imagens/ ficam: o estágio "test" precisa deles.
 # O estágio "runtime" copia apenas config.py e detectar_endpoint.py.

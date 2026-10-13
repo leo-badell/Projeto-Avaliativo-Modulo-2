@@ -1,16 +1,21 @@
-"""Fine-tuning do YOLOv8 sobre o dataset african-wildlife.
+"""Fine-tuning do YOLOv8 sobre o dataset construction-ppe.
 
 Este script NÃO roda no Render: o plano free (0.1 vCPU / 512 MB) não comporta os
 gradientes e o otimizador do treino. Ele roda com GPU no Kaggle (ou na CPU local,
 para um teste curto) e produz um único artefato — o best.pt — que é a única coisa
 que viaja para o deploy.
 
-O dataset african-wildlife é baixado pelo próprio ultralytics; não há nada para
-preparar à mão. Suas quatro classes dividem o problema em dois casos que o
-relatório final evidencia:
+O dataset construction-ppe é baixado pelo próprio ultralytics; não há nada para
+preparar à mão. São 11 classes de equipamento de proteção individual, e elas
+dividem o problema nos dois casos que o relatório final evidencia:
 
-    elephant, zebra  -> já existem no COCO (o modelo base já detectava)
-    buffalo,  rhino  -> não existem no COCO (capacidade genuinamente nova)
+    person                              -> já existe no COCO (controle)
+    helmet, gloves, vest, boots,        -> não existem no COCO
+    goggles, none, no_helmet,              (10 capacidades genuinamente novas)
+    no_goggle, no_gloves, no_boots
+
+A separação é limpa porque o nome de cada classe ou casa exatamente com uma do
+COCO ou não casa com nenhuma — é o que mapa_de_capacidades() abaixo explora.
 
 Uso:
     python fine_tuning.py --epocas 50 --publicar
@@ -46,9 +51,11 @@ from config import (
 # O caminho precisa ser absoluto: com um relativo, o ultralytics o concatena ao
 # próprio runs_dir e o resultado aninha (runs/detect/runs/fine_tuning/...).
 PROJETO_SAIDA = str(Path(RAIZ_PROJETO) / "runs" / "fine_tuning")
-NOME_EXECUCAO = "african_wildlife"
+NOME_EXECUCAO = "construction_ppe"
 
 # Abaixo deste mAP50 a classe entra no relatório marcada para revisão.
+# Com 11 classes as negativas (no_helmet, no_goggle...) tendem a ficar abaixo das
+# positivas: o alerta é informativo e esperado em algumas delas, não um defeito.
 LIMIAR_REVISAO = 0.50
 
 

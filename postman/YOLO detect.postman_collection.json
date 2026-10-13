@@ -1,0 +1,302 @@
+{
+  "info": {
+    "_postman_id": "7832f517-7b12-4f6f-9577-e3cbc033f8b0",
+    "name": "YOLO detect",
+    "description": "API de Detecção de Objetos (YOLOv8 + FastAPI).\n\nVariáveis da collection:\n\n- `baseUrl` — raiz da API. Padrão `http://localhost:8000`. Para o deploy use `https://projeto-avaliativo-modulo-2.onrender.com`.\n- `imagemBase` — imagem enviada ao `/detectar/` (classes do COCO).\n- `imagemEpi` — imagem enviada ao `/fine_tuning/` (classes do construction-ppe).\n\nNa CLI, rode a partir da raiz do repositório para os caminhos relativos resolverem:\n\n    postman collection run \"postman/YOLO detect.postman_collection.json\" --working-dir .\n\nNa interface do Postman, reselecione os arquivos nos requests POST: o caminho de arquivo é guardado por máquina.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "23679802",
+    "_collection_link": "https://go.postman.co/collection/23679802-7832f517-7b12-4f6f-9577-e3cbc033f8b0?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Confirma que a API está online",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"API reporta status Online\", function () {",
+              "    pm.expect(pm.response.json().status).to.eql(\"Online\");",
+              "});",
+              "",
+              "// O boot carrega só o peso base; o ajustado entra sob demanda. Este campo",
+              "// diz se o best.pt chegou na imagem — sem ele o /fine_tuning/ responde 503.",
+              "pm.test(\"Peso do fine-tuning presente na imagem\", function () {",
+              "    const corpo = pm.response.json();",
+              "    pm.expect(corpo).to.have.property(\"modelo_ajustado_disponivel\");",
+              "    pm.expect(corpo.modelo_ajustado_disponivel, \"best.pt ausente no deploy\").to.be.true;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/",
+          "host": ["{{baseUrl}}"],
+          "path": [""]
+        },
+        "description": "Health check. É também o Health Check Path configurado no Render."
+      },
+      "response": []
+    },
+    {
+      "name": "Lista as classes que o modelo é capaz de detectar",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Response time is less than 1000ms\", function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(1000);",
+              "});",
+              "",
+              "pm.test(\"Response body is valid JSON and contains expected fields\", function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property(\"total\");",
+              "    pm.expect(jsonData).to.have.property(\"classes\");",
+              "    pm.expect(jsonData.classes).to.be.an(\"array\");",
+              "    pm.expect(jsonData.total).to.equal(jsonData.classes.length);",
+              "});",
+              "",
+              "// /classes expõe o modelo BASE, não o ajustado: são sempre as 80 do COCO.",
+              "pm.test(\"Modelo base expõe as 80 classes do COCO\", function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.total).to.eql(80);",
+              "    pm.expect(jsonData.classes).to.include(\"person\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/classes",
+          "host": ["{{baseUrl}}"],
+          "path": ["classes"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Recebe uma imagem e devolve classes",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "// 50 s cobre o cold start do free tier do Render (hiberna após 15 min).",
+              "pm.test(\"Response time is less than 50000ms\", function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(50000);",
+              "});",
+              "",
+              "pm.test(\"Response has valid JSON structure\", function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property(\"mensagem\");",
+              "    pm.expect(jsonData).to.have.property(\"modelo\");",
+              "    pm.expect(jsonData).to.have.property(\"total_objetos\");",
+              "    pm.expect(jsonData).to.have.property(\"resultados\").that.is.an(\"array\");",
+              "});",
+              "",
+              "pm.test(\"Total objects matches results array length\", function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData.total_objetos).to.equal(jsonData.resultados.length);",
+              "});",
+              "",
+              "pm.test(\"Respondeu o peso base, não o ajustado\", function () {",
+              "    pm.expect(pm.response.json().modelo).to.eql(\"yolov8n.pt\");",
+              "});",
+              "",
+              "pm.test(\"Coordenadas formam caixas válidas\", function () {",
+              "    pm.response.json().resultados.forEach(function (objeto) {",
+              "        const c = objeto.coordenadas;",
+              "        pm.expect(c.x_min, objeto.classe).to.be.below(c.x_max);",
+              "        pm.expect(c.y_min, objeto.classe).to.be.below(c.y_max);",
+              "        pm.expect(objeto.confianca_pct).to.be.within(0, 100);",
+              "    });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "arquivo",
+              "type": "file",
+              "src": "{{imagemBase}}"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/detectar/",
+          "host": ["{{baseUrl}}"],
+          "path": ["detectar", ""]
+        },
+        "description": "Detecção com o modelo base (80 classes do COCO)."
+      },
+      "response": []
+    },
+    {
+      "name": "Detecção após fine tuning",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// As 11 classes do construction-ppe. O modelo ajustado NÃO é superconjunto",
+              "// do base: ele perdeu as 80 do COCO e só pode devolver rótulos desta lista.",
+              "const CLASSES_PPE = [",
+              "    \"HELMET\", \"GLOVES\", \"VEST\", \"BOOTS\", \"GOGGLES\", \"NONE\",",
+              "    \"PERSON\", \"NO_HELMET\", \"NO_GOGGLE\", \"NO_GLOVES\", \"NO_BOOTS\"",
+              "];",
+              "",
+              "pm.test(\"Status code is 200 (503 = best.pt ausente no deploy)\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Response time is less than 50000ms\", function () {",
+              "    pm.expect(pm.response.responseTime).to.be.below(50000);",
+              "});",
+              "",
+              "pm.test(\"Mesmo contrato do /detectar/\", function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property(\"mensagem\");",
+              "    pm.expect(jsonData).to.have.property(\"modelo\");",
+              "    pm.expect(jsonData).to.have.property(\"total_objetos\");",
+              "    pm.expect(jsonData).to.have.property(\"resultados\").that.is.an(\"array\");",
+              "    pm.expect(jsonData.total_objetos).to.equal(jsonData.resultados.length);",
+              "});",
+              "",
+              "pm.test(\"Respondeu o peso ajustado\", function () {",
+              "    pm.expect(pm.response.json().modelo).to.eql(\"best.pt\");",
+              "});",
+              "",
+              "// Esta é a asserção que prova que o peso do construction-ppe está no ar:",
+              "// com o best.pt antigo apareceriam BUFFALO/ELEPHANT e o teste falha.",
+              "pm.test(\"Só devolve classes do construction-ppe\", function () {",
+              "    pm.response.json().resultados.forEach(function (objeto) {",
+              "        pm.expect(CLASSES_PPE, \"classe fora do construction-ppe\").to.include(objeto.classe);",
+              "    });",
+              "});",
+              "",
+              "pm.test(\"Detectou ao menos um EPI que o COCO não conhece\", function () {",
+              "    const classes = pm.response.json().resultados.map(function (o) { return o.classe; });",
+              "    const novas = classes.filter(function (c) { return c !== \"PERSON\"; });",
+              "    pm.expect(novas, \"nenhuma capacidade nova nesta imagem\").to.not.be.empty;",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "arquivo",
+              "type": "file",
+              "src": "{{imagemEpi}}"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/fine_tuning/",
+          "host": ["{{baseUrl}}"],
+          "path": ["fine_tuning", ""]
+        },
+        "description": "Detecção com o peso do fine-tuning (construction-ppe, 11 classes).\n\nEnvie uma foto de trabalhador com EPI. A mesma imagem no `/detectar/` devolve apenas `PERSON`: capacete, colete, luvas e botas não existem no COCO."
+      },
+      "response": []
+    },
+    {
+      "name": "Rejeita arquivo que não é imagem",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status code is 415\", function () {",
+              "    pm.response.to.have.status(415);",
+              "});",
+              "",
+              "pm.test(\"Explica o formato aceito\", function () {",
+              "    pm.expect(pm.response.json().detail).to.include(\"jpg\");",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "arquivo",
+              "type": "file",
+              "src": "{{arquivoInvalido}}"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/detectar/",
+          "host": ["{{baseUrl}}"],
+          "path": ["detectar", ""]
+        },
+        "description": "Caminho de erro: validar_arquivo() barra qualquer extensão fora de jpg/jpeg/png antes de decodificar a imagem."
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "imagemBase",
+      "value": "imagens/dogs_n_sheep.jpeg",
+      "type": "string"
+    },
+    {
+      "key": "imagemEpi",
+      "value": "imagens/trabalhador_epi.jpg",
+      "type": "string"
+    },
+    {
+      "key": "arquivoInvalido",
+      "value": "README.md",
+      "type": "string"
+    }
+  ]
+}

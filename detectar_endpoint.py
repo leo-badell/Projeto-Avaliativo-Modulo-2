@@ -217,10 +217,11 @@ async def detectar_objetos_ajustado(
     arquivo: UploadFile = File(...),
     modelo: YOLO = Depends(obter_modelo_ajustado),
 ):
-    """Endpoint POST: detecta com o modelo do fine-tuning (african-wildlife).
+    """Endpoint POST: detecta com o modelo do fine-tuning (construction-ppe).
 
     Mesma imagem enviada aqui e no /detectar/ evidencia o ganho do treino:
-    buffalo e rhino não existem no COCO, então só este endpoint os encontra.
+    helmet, vest, gloves e boots não existem no COCO, então só este endpoint os
+    encontra. person existe nos dois e serve de controle da comparação.
     """
     return await analisar_upload(arquivo, modelo, os.path.basename(CAMINHO_MODELO_AJUSTADO))
 
