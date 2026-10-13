@@ -4,8 +4,9 @@ Projeto Avaliativo do Módulo 2. A API recebe uma imagem via HTTP e devolve, em 
 as classes detectadas com a confiança e as coordenadas `x_min`, `y_min`, `x_max`, `y_max`.
 
 Há dois modelos servidos lado a lado: o **base** (`yolov8n.pt`, 80 classes do COCO) e o
-**ajustado** por fine-tuning (`best.pt`, dataset african-wildlife). Enviar a mesma imagem
-para os dois endpoints evidencia o ganho do treino.
+**ajustado** por fine-tuning (`best.pt`, dataset construction-ppe — 11 classes de EPI, das
+quais 10 não existem no COCO). Enviar a mesma imagem para os dois endpoints evidencia o
+ganho do treino.
 
 ## Estrutura
 
@@ -19,6 +20,7 @@ Projeto-Avaliativo-Modulo-2/
 ├── requirements-train.txt # dependências do treino (pandas); fora da imagem
 ├── notebooks/             # fine_tuning_kaggle.ipynb (treino com GPU)
 ├── imagens/               # imagens de teste
+├── postman/               # collection para testar a API publicada
 ├── tests/                 # suíte pytest (conftest.py, dubles.py)
 ├── pytest.ini             # testpaths e marcador slow
 ├── Dockerfile             # imagem multi-stage (base, test, runtime)
@@ -69,19 +71,37 @@ carregado. O marcador `slow` fica fora da execução normal (ver `pytest.ini`).
 ## Fine-tuning
 
 O `fine_tuning.py` parte dos pesos do COCO e reaprende a cabeça de detecção sobre o
-dataset **african-wildlife** (~1050 imagens, 4 classes), baixado pelo próprio
-`ultralytics`. As classes foram escolhidas porque separam dois casos:
+dataset [**construction-ppe**](https://docs.ultralytics.com/datasets/detect/construction-ppe)
+(1132 imagens de treino, 11 classes, 178 MB), baixado pelo próprio `ultralytics`.
 
-| Classe              | No COCO? | O que o resultado demonstra            |
-| ------------------- | -------- | -------------------------------------- |
-| `elephant`, `zebra` | sim      | o modelo base já detectava             |
-| `buffalo`, `rhino`  | não      | capacidade que só existe após o treino |
+O dataset foi escolhido porque separa os dois casos de forma limpa — o nome de cada classe
+ou casa exatamente com uma do COCO, ou não casa com nenhuma:
+
+| No COCO? | Classes                                           | O que o resultado demonstra    |
+| -------- | ------------------------------------------------- | ------------------------------ |
+| sim      | `person`                                          | controle: o base já detectava  |
+| não      | `helmet`, `gloves`, `vest`, `boots`, `goggles`    | EPI presente — capacidade nova |
+| não      | `no_helmet`, `no_gloves`, `no_boots`, `no_goggle` | EPI ausente — capacidade nova  |
+| não      | `none`                                            | nenhum EPI — capacidade nova   |
+
+As classes `no_*` marcam a *ausência* do EPI correspondente — é o que torna o dataset útil
+como caso de fiscalização, e não apenas de detecção.
+
+> Trocar o dataset **não afeta o Render**. A diferença entre uma cabeça de detecção de 4 e
+> de 11 classes é de ~1.200 parâmetros (≈ 5 KB): o `best.pt` continua em ~6 MB e o consumo
+> de RAM em inferência é o mesmo. O dataset em si nunca entra na imagem — ver
+> [Por que o treino fica fora do deploy](#por-que-o-treino-fica-fora-do-deploy).
 
 ### Treinar no Kaggle (recomendado)
 
-O treino exige GPU. O Kaggle oferece ~30 h por semana de graça, e o notebook deste
-repositório está publicado em
-[kaggle.com/code/byronrestrepo/fine-tuning-do-yolov8-com-african-wildlife-dataset](https://www.kaggle.com/code/byronrestrepo/fine-tuning-do-yolov8-com-african-wildlife-dataset/notebook).
+O treino exige GPU. O Kaggle oferece ~30 h por semana de graça. Use o
+`notebooks/fine_tuning_kaggle.ipynb` deste repositório — ele já aponta para o
+`construction-ppe`.
+
+> A versão publicada em
+> [kaggle.com/code/byronrestrepo/fine-tuning-do-yolov8-com-african-wildlife-dataset](https://www.kaggle.com/code/byronrestrepo/fine-tuning-do-yolov8-com-african-wildlife-dataset/notebook)
+> ainda é a do dataset anterior. Importe o arquivo do repositório e republique, ou o
+> Kaggle rodará o treino antigo.
 
 **Passo 0 — publique o seu código.** O notebook não roda o código da sua máquina: ele
 clona do GitHub. Faça commit e push antes de começar, ou o clone falha.
@@ -128,7 +148,7 @@ python fine_tuning.py --epocas 50 --publicar            # treino real — LENTO 
 `--publicar` copia o `best.pt` para a raiz do repositório, onde a API e o Dockerfile o
 esperam. Sem a flag, o peso fica apenas em `runs/fine_tuning/`.
 
-> Sem GPU, 50 épocas sobre ~1050 imagens levam **horas**. Use o comando com `coco8.yaml`
+> Sem GPU, 50 épocas sobre 1132 imagens levam **horas**. Use o comando com `coco8.yaml`
 > para validar que o ambiente está correto e deixe o treino real para o Kaggle.
 
 Ao final o script imprime um relatório montado com `pandas`: um `merge(indicator=True)`
@@ -162,12 +182,14 @@ por `CAMINHO_MODELO_AJUSTADO` no `config.py`; em qualquer outro lugar o endpoint
 **4. Confira antes de commitar:**
 
 ```bash
-python -c "from ultralytics import YOLO; print(YOLO('best.pt').names)"
-# esperado: {0: 'buffalo', 1: 'elephant', 2: 'rhino', 3: 'zebra'}
+python -c "from ultralytics import YOLO; print(len(YOLO('best.pt').names), YOLO('best.pt').names)"
+# esperado: 11 {0: 'helmet', 1: 'gloves', 2: 'vest', 3: 'boots', 4: 'goggles',
+#               5: 'none', 6: 'Person', 7: 'no_helmet', 8: 'no_goggle',
+#               9: 'no_gloves', 10: 'no_boots'}
 ```
 
 Se aparecerem 80 classes (`person`, `bicycle`, `car`...), você pegou o `yolov8n.pt` por
-engano.
+engano. Se aparecerem 4 (`buffalo`, `elephant`...), é o peso do dataset antigo.
 
 **5. Commite e faça push.** O `best.pt` é a única exceção ao `*.pt` do `.gitignore`:
 
@@ -180,14 +202,19 @@ pasta local sem commitar não produz efeito algum no deploy.
 
 ### O modelo ajustado não é um superconjunto do base
 
-O fine-tuning substitui a cabeça de detecção: o `best.pt` conhece **somente** as 4 classes
-do african-wildlife e perdeu as 80 do COCO. Enviar uma foto de cachorro ao `/fine_tuning/`
-devolve `ELEPHANT` — ele escolhe o animal mais próximo que conhece, porque "dog" não é uma
-opção para ele.
+O fine-tuning substitui a cabeça de detecção: o `best.pt` conhece **somente** as 11 classes
+do construction-ppe e perdeu as 80 do COCO. Enviar uma foto de cachorro ao `/fine_tuning/`
+devolve lixo (`VEST`, `NONE`...) — ele escolhe o rótulo mais próximo que conhece, porque
+"dog" não é uma opção para ele.
 
-Isso é esperado, não é defeito. Para comparar os dois endpoints, **use uma foto de búfalo
-ou rinoceronte**: são as classes que não existem no COCO, então `/detectar/` não acha nada
-e `/fine_tuning/` acerta. É aí que o ganho do treino fica visível.
+Isso é esperado, não é defeito. Para comparar os dois endpoints, **use uma foto de
+trabalhador usando capacete e colete**:
+
+- `/detectar/` acha só a `PERSON` — capacete e colete não existem no COCO.
+- `/fine_tuning/` acha `HELMET`, `VEST` e os demais EPIs.
+
+É aí que o ganho do treino fica visível. A classe `person` aparecer nos dois é o controle:
+mostra que o ajustado não perdeu o que o base já fazia.
 
 ## Rodando com Docker
 
@@ -228,7 +255,7 @@ com o `opencv-python-headless`. O build remove os dois e reinstala só o headles
 | GET    | `/`             | Status da API e disponibilidade do peso ajustado |
 | GET    | `/classes`      | Lista as classes que o modelo base reconhece     |
 | POST   | `/detectar/`    | Detecta com o modelo base (80 classes do COCO)   |
-| POST   | `/fine_tuning/` | Detecta com o modelo ajustado (african-wildlife) |
+| POST   | `/fine_tuning/` | Detecta com o modelo ajustado (construction-ppe) |
 
 Os dois endpoints POST compartilham validação, contrato de resposta e limites; mudam
 apenas os pesos carregados. Se o `best.pt` não estiver presente, `/fine_tuning/` responde
@@ -240,12 +267,17 @@ apenas os pesos carregados. Se o `best.pt` não estiver presente, `/fine_tuning/
 {
   "mensagem": "Análise de imagem concluída com sucesso.",
   "modelo": "best.pt",
-  "total_objetos": 1,
+  "total_objetos": 2,
   "resultados": [
     {
-      "classe": "BUFFALO",
+      "classe": "HELMET",
       "confianca_pct": 92.45,
       "coordenadas": { "x_min": 48, "y_min": 112, "x_max": 310, "y_max": 428 }
+    },
+    {
+      "classe": "VEST",
+      "confianca_pct": 88.1,
+      "coordenadas": { "x_min": 40, "y_min": 180, "x_max": 322, "y_max": 500 }
     }
   ]
 }
@@ -254,13 +286,40 @@ apenas os pesos carregados. Se o `best.pt` não estiver presente, `/fine_tuning/
 O campo `modelo` identifica qual peso respondeu — útil ao comparar os dois endpoints
 no Postman.
 
+## Testando com o Postman
+
+A collection fica em `postman/YOLO detect.postman_collection.json` e cobre os quatro
+endpoints, com testes de contrato em cada requisição.
+
+**Na interface:** *Import* → selecione o arquivo. Ajuste a variável `baseUrl` da collection
+(`http://localhost:8000` por padrão) e, nas requisições POST, **reselecione o arquivo de
+imagem** — o Postman guarda o caminho por máquina.
+
+**Pela CLI** (já instalada neste ambiente):
+
+```bash
+postman collection run "postman/YOLO detect.postman_collection.json" --working-dir .
+```
+
+O `--working-dir .` faz o Postman resolver os caminhos relativos de `imagens/`. Para rodar
+contra o deploy:
+
+```bash
+postman collection run "postman/YOLO detect.postman_collection.json" \
+  --working-dir . \
+  --env-var "baseUrl=https://projeto-avaliativo-modulo-2.onrender.com"
+```
+
+> O primeiro request contra o Render pode levar ~50 s: o free tier hiberna após 15 min e
+> precisa subir o container. Os limites de tempo da collection já contam com isso.
+
 ## Variáveis de ambiente
 
 | Variável               | Padrão                  | Descrição                        |
 | ---------------------- | ----------------------- | -------------------------------- |
 | `YOLO_MODELO`          | `yolov8n.pt`            | Peso do modelo base              |
 | `YOLO_MODELO_AJUSTADO` | `best.pt`               | Peso do fine-tuning              |
-| `YOLO_DATASET`         | `african-wildlife.yaml` | Dataset usado pelo treino        |
+| `YOLO_DATASET`         | `construction-ppe.yaml` | Dataset usado pelo treino        |
 | `YOLO_CONFIANCA`       | `0.40`                  | Confiança mínima para detectar   |
 | `YOLO_IMGSZ`           | `640`                   | Lado da imagem na inferência     |
 | `UPLOAD_MAX_BYTES`     | `10485760`              | Tamanho máximo do upload (10 MB) |

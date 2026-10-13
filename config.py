@@ -15,7 +15,9 @@ NOME_MODELO_AJUSTADO = os.getenv("YOLO_MODELO_AJUSTADO", "best.pt")
 CAMINHO_MODELO_AJUSTADO = os.path.join(RAIZ_PROJETO, NOME_MODELO_AJUSTADO)
 
 # Dataset usado pelo fine_tuning.py; o ultralytics baixa sozinho pelo nome.
-DATASET_FINE_TUNING = os.getenv("YOLO_DATASET", "african-wildlife.yaml")
+# Lido apenas pelo treino: nada no caminho de request toca esta constante, então
+# trocar de dataset não altera em nada a imagem servida no Render.
+DATASET_FINE_TUNING = os.getenv("YOLO_DATASET", "construction-ppe.yaml")
 
 CONFIANCA_MINIMA = float(os.getenv("YOLO_CONFIANCA", "0.40"))
 # Lado da imagem usado na inferência; reduzir acelera a rede e perde objetos pequenos.
