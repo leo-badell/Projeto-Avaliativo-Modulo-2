@@ -25,5 +25,13 @@ TAMANHO_INFERENCIA = int(os.getenv("YOLO_IMGSZ", "640"))
 EXTENSOES_PERMITIDAS = ("jpg", "jpeg", "png")
 TAMANHO_MAXIMO_BYTES = int(os.getenv("UPLOAD_MAX_BYTES", 10 * 1024 * 1024))
 
+# Teto de pixels da imagem já decodificada. O limite acima mede o arquivo
+# comprimido, que é outra coisa: um PNG de 431 KB com 12000x12000 pixels passa
+# nele e vira 412 MB na RAM, derrubando o container de 512 MB. O OpenCV lê este
+# valor uma única vez, quando o cv2 carrega — por isso o detectar_endpoint.py
+# importa o config antes de qualquer coisa.
+MAXIMO_PIXELS_IMAGEM = int(os.getenv("YOLO_MAX_PIXELS", 26_000_000))
+os.environ["OPENCV_IO_MAX_IMAGE_PIXELS"] = str(MAXIMO_PIXELS_IMAGEM)
+
 HOST = os.getenv("HOST", "127.0.0.1")
 PORTA = int(os.getenv("PORT", "8000"))

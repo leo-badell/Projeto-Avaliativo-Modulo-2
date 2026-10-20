@@ -1,3 +1,4 @@
+import inspect
 import os
 
 import pytest
@@ -32,6 +33,20 @@ def test_bytes_para_imagem_rejeita_bytes_invalidos():
     with pytest.raises(HTTPException) as erro:
         api.bytes_para_imagem(b"isto nao e uma imagem")
     assert erro.value.status_code == 400
+
+
+def test_bytes_para_imagem_rejeita_imagem_com_pixels_demais(png_pixels_demais):
+    """Sem o teto de pixels, estes 33 KB viram centenas de MB de RAM.
+
+    Também prova a ordem dos imports: o teto só vale se o config carregar antes
+    do cv2. Se alguém reordenar os imports do detectar_endpoint.py, cai aqui.
+    """
+    assert len(png_pixels_demais) < TAMANHO_MAXIMO_BYTES  # passa no limite de bytes
+
+    with pytest.raises(HTTPException) as erro:
+        api.bytes_para_imagem(png_pixels_demais)
+
+    assert erro.value.status_code == 413
 
 
 # ==============================================================================
@@ -147,6 +162,45 @@ def test_post_detectar_rejeita_upload_acima_do_limite(client, modelo_falso):
 
 def test_post_detectar_exige_o_campo_arquivo(client):
     assert client.post("/detectar/").status_code == 422
+
+
+# ==============================================================================
+# MEMÓRIA E CONCORRÊNCIA
+# ==============================================================================
+class _ArquivoEnorme:
+    """Finge um upload gigante sem alocar os bytes de verdade."""
+
+    def read(self, n: int = -1) -> bytes:
+        if n < 0:
+            raise AssertionError("leu o upload inteiro na memoria")
+        return b"\xff" * n
+
+
+def test_analisar_upload_recusa_sem_carregar_o_arquivo_inteiro(modelo_falso):
+    """O limite precisa ser aplicado durante a leitura, não depois dela.
+
+    Lendo tudo primeiro, um upload de 2 GB estoura a memória antes de chegar
+    ao 413. O dublê acusa qualquer read() sem limite.
+    """
+    arquivo = _upload("grande.jpg")
+    arquivo.file = _ArquivoEnorme()
+
+    with pytest.raises(HTTPException) as erro:
+        api.analisar_upload(arquivo, modelo_falso, "qualquer.pt")
+
+    assert erro.value.status_code == 413
+    assert modelo_falso.chamadas == []
+
+
+def test_endpoints_de_deteccao_sao_sincronos():
+    """predict() é bloqueante: num async def ele travaria o laço de eventos.
+
+    Sendo def, o FastAPI roda a inferência na thread pool e o resto da API
+    (inclusive o GET / do healthcheck) continua respondendo.
+    """
+    assert not inspect.iscoroutinefunction(api.analisar_upload)
+    assert not inspect.iscoroutinefunction(api.detectar_objetos)
+    assert not inspect.iscoroutinefunction(api.detectar_objetos_ajustado)
 
 
 # ==============================================================================

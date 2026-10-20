@@ -1,3 +1,18 @@
+# O config vem primeiro de propósito: é ele que fixa o teto de pixels do OpenCV,
+# lido uma única vez na carga do cv2 — e o ultralytics abaixo já carrega o cv2
+# por dentro. Importado depois, o teto chegaria tarde demais.
+from config import (
+    CAMINHO_MODELO,
+    CAMINHO_MODELO_AJUSTADO,
+    CONFIANCA_MINIMA,
+    MAXIMO_PIXELS_IMAGEM,
+    TAMANHO_INFERENCIA,
+    EXTENSOES_PERMITIDAS,
+    TAMANHO_MAXIMO_BYTES,
+    HOST,
+    PORTA,
+)
+
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from pydantic import BaseModel
 from ultralytics import YOLO
@@ -7,17 +22,6 @@ from typing import Any
 import os
 import cv2
 import numpy as np
-
-from config import (
-    CAMINHO_MODELO,
-    CAMINHO_MODELO_AJUSTADO,
-    CONFIANCA_MINIMA,
-    TAMANHO_INFERENCIA,
-    EXTENSOES_PERMITIDAS,
-    TAMANHO_MAXIMO_BYTES,
-    HOST,
-    PORTA,
-)
 
 # ==============================================================================
 # BLOCO 1: MOLDES PYDANTIC (FORMATO DA RESPOSTA JSON)
@@ -103,7 +107,16 @@ app = FastAPI(
 def bytes_para_imagem(imagem_bytes: bytes) -> np.ndarray:
     """Converte os bytes recebidos na requisição em uma matriz de imagem do OpenCV."""
     vetor = np.frombuffer(imagem_bytes, np.uint8)
-    imagem = cv2.imdecode(vetor, cv2.IMREAD_COLOR)
+
+    try:
+        imagem = cv2.imdecode(vetor, cv2.IMREAD_COLOR)
+    except cv2.error:
+        # Acima do teto de pixels o OpenCV levanta em vez de devolver None.
+        raise HTTPException(
+            status_code=413,
+            detail=f"Imagem com mais de {MAXIMO_PIXELS_IMAGEM} pixels.",
+        )
+
     if imagem is None:
         raise HTTPException(status_code=400, detail="Não foi possível decodificar a imagem.")
     return imagem
@@ -169,15 +182,21 @@ def listar_classes(modelo: YOLO = Depends(obter_modelo)) -> RespostaClasses:
     return RespostaClasses(total=len(classes), classes=classes)
 
 
-async def analisar_upload(arquivo: UploadFile, modelo: YOLO, rotulo_modelo: str) -> RespostaAPI:
+def analisar_upload(arquivo: UploadFile, modelo: YOLO, rotulo_modelo: str) -> RespostaAPI:
     """Pipeline comum aos dois endpoints de detecção.
 
     A única diferença entre /detectar/ e /fine_tuning/ são os pesos carregados;
     validação, decodificação e extração das caixas são idênticas.
+
+    Síncrona de propósito: predict() é CPU puro e bloqueante. Num async def ele
+    travaria o laço de eventos, e nenhuma outra requisição — nem o healthcheck —
+    seria atendida durante a inferência. Sendo def, o FastAPI a roda na thread pool.
     """
     validar_arquivo(arquivo)
 
-    imagem_bytes = await arquivo.read()
+    # read(limite + 1): o que passar do limite nunca entra na memória, e o byte
+    # extra é o que distingue "no limite" de "acima dele".
+    imagem_bytes = arquivo.file.read(TAMANHO_MAXIMO_BYTES + 1)
     if len(imagem_bytes) > TAMANHO_MAXIMO_BYTES:
         raise HTTPException(status_code=413, detail="Imagem maior que o limite permitido.")
 
@@ -204,16 +223,16 @@ async def analisar_upload(arquivo: UploadFile, modelo: YOLO, rotulo_modelo: str)
 
 
 @app.post("/detectar/", response_model=RespostaAPI)
-async def detectar_objetos(
+def detectar_objetos(
     arquivo: UploadFile = File(...),
     modelo: YOLO = Depends(obter_modelo),
 ):
     """Endpoint POST: detecta com o modelo base (80 classes do COCO)."""
-    return await analisar_upload(arquivo, modelo, os.path.basename(CAMINHO_MODELO))
+    return analisar_upload(arquivo, modelo, os.path.basename(CAMINHO_MODELO))
 
 
 @app.post("/fine_tuning/", response_model=RespostaAPI)
-async def detectar_objetos_ajustado(
+def detectar_objetos_ajustado(
     arquivo: UploadFile = File(...),
     modelo: YOLO = Depends(obter_modelo_ajustado),
 ):
@@ -223,7 +242,7 @@ async def detectar_objetos_ajustado(
     helmet, vest, gloves e boots não existem no COCO, então só este endpoint os
     encontra. person existe nos dois e serve de controle da comparação.
     """
-    return await analisar_upload(arquivo, modelo, os.path.basename(CAMINHO_MODELO_AJUSTADO))
+    return analisar_upload(arquivo, modelo, os.path.basename(CAMINHO_MODELO_AJUSTADO))
 
 
 if __name__ == "__main__":

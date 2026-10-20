@@ -1,15 +1,19 @@
 import os
 import sys
 
-import cv2
-import numpy as np
-import pytest
-from fastapi.testclient import TestClient
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import detectar_endpoint as api
-from dubles import ModeloFalso
+# A API tem de ser importada antes do cv2, aqui como em produção: é o config,
+# carregado por ela, que fixa o teto de pixels do OpenCV — e o OpenCV lê esse
+# teto uma única vez. Importar o cv2 primeiro desligaria a proteção na suíte
+# inteira, e os testes passariam a medir um comportamento que não é o do deploy.
+import detectar_endpoint as api  # noqa: E402
+from dubles import ModeloFalso  # noqa: E402
+
+import cv2  # noqa: E402
+import numpy as np  # noqa: E402
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 @pytest.fixture
@@ -48,5 +52,18 @@ def jpeg_valido() -> bytes:
     """JPEG sintético, evita depender dos arquivos de imagens/."""
     matriz = np.full((120, 160, 3), 127, dtype=np.uint8)
     ok, buffer = cv2.imencode(".jpg", matriz)
+    assert ok
+    return buffer.tobytes()
+
+
+@pytest.fixture
+def png_pixels_demais() -> bytes:
+    """PNG minúsculo no disco e gigante na memória: ~33 KB que viram 26 Mpx.
+
+    É a forma do ataque que o teto de pixels barra. O limite de bytes do upload
+    não enxerga diferença nenhuma entre este arquivo e uma foto comum.
+    """
+    matriz = np.zeros((5100, 5100), np.uint8)  # 26.01 Mpx, logo acima do teto
+    ok, buffer = cv2.imencode(".png", matriz)
     assert ok
     return buffer.tobytes()
