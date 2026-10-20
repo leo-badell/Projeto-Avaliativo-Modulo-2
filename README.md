@@ -323,5 +323,6 @@ postman collection run "postman/YOLO detect.postman_collection.json" \
 | `YOLO_CONFIANCA`       | `0.40`                  | Confiança mínima para detectar   |
 | `YOLO_IMGSZ`           | `640`                   | Lado da imagem na inferência     |
 | `UPLOAD_MAX_BYTES`     | `10485760`              | Tamanho máximo do upload (10 MB) |
+| `YOLO_MAX_PIXELS`      | `26000000`              | Teto de pixels da imagem decodificada (26 Mpx) |
 | `HOST`                 | `127.0.0.1`             | Host do servidor                 |
 | `PORT`                 | `8000`                  | Porta do servidor                |
